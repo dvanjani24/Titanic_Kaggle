@@ -1,0 +1,73 @@
+---
+title: "Titanic - Machine Learning from Disaster"
+output: html_document
+date: "2022-10-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Dependencies
+```{r}
+library(tidyverse)
+library(mice)
+library(randomForest)
+```
+
+```{r}
+train.original <- read.csv("train.csv")
+test.original <- read.csv("test.csv")
+
+full <- bind_rows(train.original, test.original)
+gender_submission <- read.csv("gender_submission.csv")
+
+str(full)
+
+full <- full %>%
+  mutate(Survived  = as.factor(Survived),
+         Pclass = as.factor(Pclass),
+         Sex = as.factor(Sex), 
+         Embarked = as.factor(Embarked))
+
+names(full)
+colSums(is.na(full))
+sapply(data.frame(sapply(full, function(x) x == "")), function(x) sum(x, na.rm = TRUE))
+full <- full[,c(1,2,3,5,6,7,8,10,12)]
+
+full$Embarked[full$Embarked==""] <- NA
+```
+
+Impute Age
+```{r}
+impute.dat<- full[,-c(1,2)]
+
+impute <- mice(impute.dat) # Use Mice for imputing missing Age
+predM <- impute$predictorMatrix 
+meth <- impute$method
+predM
+meth
+
+meth["Embarked"] <- "rf"
+
+impute <- mice(impute.dat, predictionMatrix = predM, method = meth)
+complete <- complete(impute)
+
+full$Age <- complete$Age
+full$Embarked <- complete$Embarked
+full$Fare <- complete$Fare
+colSums(is.na(full))
+sapply(data.frame(sapply(full, function(x) x == "")), function(x) sum(x, na.rm = TRUE))
+```
+#Train and Predict
+```{r}
+train <- full[1:nrow(train.original),]
+test <- full[1:nrow(test.original),]
+
+rf.fit <- randomForest(Survived~.-PassengerId, data = train)
+plot(rf.fit)
+importance <- importance(rf.fit)
+preds <- data.frame(PassengerId = test.original$PassengerId, Survived = predict(rf.fit, test))
+write.csv(preds, "submission.csv")
+```
+
